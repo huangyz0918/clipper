@@ -43,6 +43,7 @@ logger = logging.getLogger(__name__)
 
 class DockerContainerManager(ContainerManager):
     def __init__(self,
+                 nvidia_runtime=False,
                  cluster_name="default-cluster",
                  docker_ip_address="localhost",
                  use_centralized_log=False,
@@ -89,6 +90,7 @@ class DockerContainerManager(ContainerManager):
             Any additional keyword arguments to pass to the call to
             :py:meth:`docker.client.containers.run`.
         """
+        self.nvidia_runtime = nvidia_runtime
         self.cluster_name = cluster_name
         self.cluster_identifier = cluster_name  # For logging purpose
         self.public_hostname = docker_ip_address
@@ -404,6 +406,7 @@ class DockerContainerManager(ContainerManager):
             random.randint(0, 100000))
 
         run_container(
+            nvidia_runtime=self.nvidia_runtime,
             docker_client=self.docker_client,
             image=image,
             name=model_container_name,
