@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 class DockerContainerManager(ContainerManager):
     def __init__(self,
+                 cuda_id=0,
+                 nvidia_runtime=Fasle,
                  docker_ip_address="localhost",
                  clipper_query_port=1337,
                  clipper_management_port=1338,
@@ -55,6 +57,8 @@ class DockerContainerManager(ContainerManager):
             Any additional keyword arguments to pass to the call to
             :py:meth:`docker.client.containers.run`.
         """
+        self.cuda_id = cuda_id
+        self.nvidia_runtime = nvidia_runtime
         self.public_hostname = docker_ip_address
         self.clipper_query_port = clipper_query_port
         self.clipper_management_port = clipper_management_port
@@ -202,6 +206,7 @@ class DockerContainerManager(ContainerManager):
                 "No Clipper query frontend to attach model container to")
         query_frontend_hostname = containers[0].name
         env_vars = {
+            "CUDA_VISIBLE_DEVICES": self.cuda_id,
             "CLIPPER_MODEL_NAME": name,
             "CLIPPER_MODEL_VERSION": version,
             # NOTE: assumes this container being launched on same machine
@@ -216,12 +221,21 @@ class DockerContainerManager(ContainerManager):
 
         model_container_name = model_container_label + '-{}'.format(
             random.randint(0, 100000))
-        self.docker_client.containers.run(
-            image,
-            name=model_container_name,
-            environment=env_vars,
-            labels=labels,
-            **self.extra_container_kwargs)
+        if self.nvidia_runtime:
+            self.docker_client.containers.run(
+                image,
+                runtime='nvidia',
+                name=model_container_name,
+                environment=env_vars,
+                labels=labels,
+                **self.extra_container_kwargs)
+        else:
+            self.docker_client.containers.run(
+                image,
+                name=model_container_name,
+                environment=env_vars,
+                labels=labels,
+                **self.extra_container_kwargs)            
 
         # Metric Section
         add_to_metric_config(model_container_name,
