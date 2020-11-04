@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class DockerContainerManager(ContainerManager):
     def __init__(self,
                  cuda_id=0,
-                 nvidia_runtime=Fasle,
+                 nvidia_runtime=False,
                  docker_ip_address="localhost",
                  clipper_query_port=1337,
                  clipper_management_port=1338,
