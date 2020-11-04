@@ -49,17 +49,31 @@ def list_containers(docker_client, filters):
 
 @retry((docker.errors.APIError, TimeoutError, Timeout),
        tries=5, logger=logger)
-def run_container(docker_client, image, cmd=None, name=None, ports=None,
+def run_container(docker_client, image, cmd=None, name=None, ports=None, nvidia_runtime=False,
                   labels=None, environment=None, log_config=None, volumes=None,
                   user=None, extra_container_kwargs=None):
-    return docker_client.containers.run(
-        image,
-        command=cmd,
-        name=name,
-        ports=ports,
-        labels=labels,
-        environment=environment,
-        volumes=volumes,
-        user=user,
-        log_config=log_config,
-        **extra_container_kwargs)
+    if nvidia_runtime:      
+        return docker_client.containers.run(
+            image,
+            runtime='nvidia',
+            command=cmd,
+            name=name,
+            ports=ports,
+            labels=labels,
+            environment=environment,
+            volumes=volumes,
+            user=user,
+            log_config=log_config,
+            **extra_container_kwargs)
+    else:
+        return docker_client.containers.run(
+            image,
+            command=cmd,
+            name=name,
+            ports=ports,
+            labels=labels,
+            environment=environment,
+            volumes=volumes,
+            user=user,
+            log_config=log_config,
+            **extra_container_kwargs)
