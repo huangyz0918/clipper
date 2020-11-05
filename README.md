@@ -247,3 +247,24 @@ You can contact us at <clipper-dev@googlegroups.com>
 ## Acknowledgements
 
 This research is supported in part by DHS Award HSHQDC-16-3-00083, DOE Award SN10040 DE-SC0012463, NSF CISE Expeditions Award CCF-1139158, and gifts from Ant Financial, Amazon Web Services, CapitalOne, Ericsson, GE, Google, Huawei, Intel, IBM, Microsoft and VMware.
+
+
+## GPU Support 
+
+Install the GPU-Clipper
+
+```python
+pip install -e {path to clipper}/clipper_admin     
+```
+
+build mlmodelci pytorch gpu support docker image: 
+
+```python 
+docker build -t mlmodelci/cuda10-pytorch36-clipper:0.4.1 -f ./dockerfiles/CUDA10Py36PyTorchContainerDockerfile .   
+```
+
+Start model serving replicas using GPU mode:
+
+```python
+clipper_conn = ClipperConnection(DockerContainerManager(cuda_id=3, nvidia_runtime=True))
+```

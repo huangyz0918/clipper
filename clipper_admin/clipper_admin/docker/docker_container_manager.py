@@ -368,7 +368,7 @@ class DockerContainerManager(ContainerManager):
                 "No Clipper query frontend to attach model container to")
         query_frontend_hostname = containers[0].name
         env_vars = {
-            "CUDA_VISIBLE_DEVICES": self.cuda_id,
+            "NVIDIA_VISIBLE_DEVICES": self.cuda_id,
             "CLIPPER_MODEL_NAME": name,
             "CLIPPER_MODEL_VERSION": version,
             # NOTE: assumes this container being launched on same machine
