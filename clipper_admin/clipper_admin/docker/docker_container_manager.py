@@ -366,22 +366,21 @@ class DockerContainerManager(ContainerManager):
             raise ClipperException(
                 "No Clipper query frontend to attach model container to")
         query_frontend_hostname = containers[0].name
-        env_vars = {
-            "NVIDIA_VISIBLE_DEVICES": cuda_id,
-            "CLIPPER_MODEL_NAME": name,
-            "CLIPPER_MODEL_VERSION": version,
-            # NOTE: assumes this container being launched on same machine
-            # in same docker network as the query frontend
-            "CLIPPER_IP": query_frontend_hostname,
-            "CLIPPER_INPUT_TYPE": input_type,
-        }
-
         model_container_label = create_model_container_label(name, version)
         labels = self.common_labels.copy()
         labels[CLIPPER_MODEL_CONTAINER_LABEL] = model_container_label
         labels[CLIPPER_DOCKER_LABEL] = self.cluster_name
 
         if self.nvidia_runtime:
+            env_vars = {
+                "NVIDIA_VISIBLE_DEVICES": cuda_id,
+                "CLIPPER_MODEL_NAME": name,
+                "CLIPPER_MODEL_VERSION": version,
+                # NOTE: assumes this container being launched on same machine
+                # in same docker network as the query frontend
+                "CLIPPER_IP": query_frontend_hostname,
+                "CLIPPER_INPUT_TYPE": input_type,
+            }
             model_container_name = model_container_label + '-cuda-{}'.format(cuda_id) + '-{}'.format(
                 random.randint(0, 100000))
             self.docker_client.containers.run(
@@ -393,6 +392,13 @@ class DockerContainerManager(ContainerManager):
                 log_config=self.log_config,
                 **self.extra_container_kwargs)
         else:
+            env_vars = {
+                "NVIDIA_VISIBLE_DEVICES": '',
+                "CLIPPER_MODEL_NAME": name,
+                "CLIPPER_MODEL_VERSION": version,
+                "CLIPPER_IP": query_frontend_hostname,
+                "CLIPPER_INPUT_TYPE": input_type,
+            }
             model_container_name = model_container_label + '-{}'.format(
                 random.randint(0, 100000))
             self.docker_client.containers.run(
@@ -433,7 +439,7 @@ class DockerContainerManager(ContainerManager):
                 if num_real < num_target:
                     num_missing = num_target - num_real
                     self.logger.info(
-                        "Found {cur} replicas for {name}:{version}. Adding {missing} in CUDA {cuda_id}".
+                        "Found {cur} replicas for {name}:{version}. Adding {missing} to CUDA {cuda_id}".
                         format(
                             cuda_id=cuda_id,
                             cur=num_real,
@@ -452,7 +458,7 @@ class DockerContainerManager(ContainerManager):
                 elif num_real > num_target:
                     num_extra = num_real - num_target
                     self.logger.info(
-                        "Found {cur} replicas for {name}:{version}. Removing {extra} in CUDA {cuda_id}".
+                        "Found {cur} replicas for {name}:{version}. Removing {extra} from CUDA {cuda_id}".
                         format(
                             cuda_id=cuda_id,
                             cur=num_real,
@@ -471,7 +477,7 @@ class DockerContainerManager(ContainerManager):
             if len(current_replicas) < num_replicas:
                 num_missing = num_replicas - len(current_replicas)
                 self.logger.info(
-                    "Found {cur} replicas for {name}:{version}. Adding {missing}".
+                    "Found {cur} replicas for {name}:{version}. Adding {missing} to CPU".
                     format(
                         cur=len(current_replicas),
                         name=name,
@@ -489,7 +495,7 @@ class DockerContainerManager(ContainerManager):
             elif len(current_replicas) > num_replicas:
                 num_extra = len(current_replicas) - num_replicas
                 self.logger.info(
-                    "Found {cur} replicas for {name}:{version}. Removing {extra}".
+                    "Found {cur} replicas for {name}:{version}. Removing {extra} from CPU".
                     format(
                         cur=len(current_replicas),
                         name=name,
