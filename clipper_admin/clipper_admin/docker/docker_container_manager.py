@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 class DockerContainerManager(ContainerManager):
     def __init__(self,
-                 cuda_id=0,
+                 cuda_config_list=None,
                  nvidia_runtime=False,
                  cluster_name="default-cluster",
                  docker_ip_address="localhost",
@@ -78,7 +78,7 @@ class DockerContainerManager(ContainerManager):
             Any additional keyword arguments to pass to the call to
             :py:meth:`docker.client.containers.run`.
         """
-        self.cuda_id = cuda_id
+        self.cuda_config_list = cuda_config_list
         self.nvidia_runtime = nvidia_runtime
         self.cluster_name = cluster_name
         self.cluster_identifier = cluster_name  # For logging purpose
@@ -352,8 +352,7 @@ class DockerContainerManager(ContainerManager):
     def get_num_replicas(self, name, version):
         return len(self._get_replicas(name, version))
 
-    def _add_replica(self, name, version, input_type, image):
-
+    def _add_replica(self, name, version, input_type, image, cuda_id=0):
         containers = self.docker_client.containers.list(
             filters={
                 "label": [
@@ -368,7 +367,7 @@ class DockerContainerManager(ContainerManager):
                 "No Clipper query frontend to attach model container to")
         query_frontend_hostname = containers[0].name
         env_vars = {
-            "NVIDIA_VISIBLE_DEVICES": self.cuda_id,
+            "NVIDIA_VISIBLE_DEVICES": cuda_id,
             "CLIPPER_MODEL_NAME": name,
             "CLIPPER_MODEL_VERSION": version,
             # NOTE: assumes this container being launched on same machine
@@ -382,10 +381,9 @@ class DockerContainerManager(ContainerManager):
         labels[CLIPPER_MODEL_CONTAINER_LABEL] = model_container_label
         labels[CLIPPER_DOCKER_LABEL] = self.cluster_name
 
-        model_container_name = model_container_label + '-{}'.format(
-            random.randint(0, 100000))
-
         if self.nvidia_runtime:
+            model_container_name = model_container_label + '-cuda-{}'.format(cuda_id) + '-{}'.format(
+                random.randint(0, 100000))
             self.docker_client.containers.run(
                 image,
                 runtime='nvidia',
@@ -395,6 +393,8 @@ class DockerContainerManager(ContainerManager):
                 log_config=self.log_config,
                 **self.extra_container_kwargs)
         else:
+            model_container_name = model_container_label + '-{}'.format(
+                random.randint(0, 100000))
             self.docker_client.containers.run(
                 image,
                 name=model_container_name,
@@ -402,6 +402,10 @@ class DockerContainerManager(ContainerManager):
                 labels=labels,
                 log_config=self.log_config,
                 **self.extra_container_kwargs)
+
+        self.logger.info(
+                "Added model_container_name = {n}".
+                format(n=model_container_name))
 
         # Metric Section
         add_to_metric_config(model_container_name, self.prom_config_path,
@@ -412,41 +416,92 @@ class DockerContainerManager(ContainerManager):
         return model_container_name
 
     def set_num_replicas(self, name, version, input_type, image, num_replicas):
-        current_replicas = self._get_replicas(name, version)
-        if len(current_replicas) < num_replicas:
-            num_missing = num_replicas - len(current_replicas)
-            self.logger.info(
-                "Found {cur} replicas for {name}:{version}. Adding {missing}".
-                format(
-                    cur=len(current_replicas),
-                    name=name,
-                    version=version,
-                    missing=(num_missing)))
+        # GPU mode
+        if self.nvidia_runtime:
+            target_replica_nums = range(len(self.cuda_config_list))
+            current_replicas = self._get_replicas(name, version)
+            current_cuda_ids = [int(str(c.name).split("-")[2]) for c in current_replicas]
+            replica_list = [0 for i in target_replica_nums]
 
-            model_container_names = []
-            for _ in range(num_missing):
-                container_name = self._add_replica(name, version, input_type,
-                                                   image)
-                model_container_names.append(container_name)
-            for name in model_container_names:
-                self._check_container_status(name)
+            for i in current_cuda_ids:
+                replica_list[i] += 1
 
-        elif len(current_replicas) > num_replicas:
-            num_extra = len(current_replicas) - num_replicas
-            self.logger.info(
-                "Found {cur} replicas for {name}:{version}. Removing {extra}".
-                format(
-                    cur=len(current_replicas),
-                    name=name,
-                    version=version,
-                    extra=(num_extra)))
-            while len(current_replicas) > num_replicas:
-                cur_container = current_replicas.pop()
-                cur_container.stop()
-                # Metric Section
-                delete_from_metric_config(cur_container.name,
-                                          self.prom_config_path,
-                                          self.prometheus_port)
+            for cuda_id in target_replica_nums:
+                num_real = replica_list[cuda_id]
+                num_target = self.cuda_config_list[cuda_id]
+
+                if num_real < num_target:
+                    num_missing = num_target - num_real
+                    self.logger.info(
+                        "Found {cur} replicas for {name}:{version}. Adding {missing} in CUDA {cuda_id}".
+                        format(
+                            cuda_id=cuda_id,
+                            cur=num_real,
+                            name=name,
+                            version=version,
+                            missing=(num_missing)))
+
+                    model_container_names = []
+                    for _ in range(num_missing):
+                        container_name = self._add_replica(name, version, input_type,
+                                                        image, cuda_id)
+                        model_container_names.append(container_name)
+                    for n in model_container_names:
+                        self._check_container_status(n)
+
+                elif num_real > num_target:
+                    num_extra = num_real - num_target
+                    self.logger.info(
+                        "Found {cur} replicas for {name}:{version}. Removing {extra} in CUDA {cuda_id}".
+                        format(
+                            cuda_id=cuda_id,
+                            cur=num_real,
+                            name=name,
+                            version=version,
+                            extra=(num_extra)))
+                    while num_real > num_target:
+                        cur_container = current_replicas.pop()
+                        cur_container.stop()
+                        # Metric Section
+                        delete_from_metric_config(cur_container.name,
+                                                self.prom_config_path,
+                                                self.prometheus_port)
+        else: # CPU mode
+            current_replicas = self._get_replicas(name, version)
+            if len(current_replicas) < num_replicas:
+                num_missing = num_replicas - len(current_replicas)
+                self.logger.info(
+                    "Found {cur} replicas for {name}:{version}. Adding {missing}".
+                    format(
+                        cur=len(current_replicas),
+                        name=name,
+                        version=version,
+                        missing=(num_missing)))
+
+                model_container_names = []
+                for _ in range(num_missing):
+                    container_name = self._add_replica(name, version, input_type,
+                                                    image)
+                    model_container_names.append(container_name)
+                for name in model_container_names:
+                    self._check_container_status(name)
+
+            elif len(current_replicas) > num_replicas:
+                num_extra = len(current_replicas) - num_replicas
+                self.logger.info(
+                    "Found {cur} replicas for {name}:{version}. Removing {extra}".
+                    format(
+                        cur=len(current_replicas),
+                        name=name,
+                        version=version,
+                        extra=(num_extra)))
+                while len(current_replicas) > num_replicas:
+                    cur_container = current_replicas.pop()
+                    cur_container.stop()
+                    # Metric Section
+                    delete_from_metric_config(cur_container.name,
+                                            self.prom_config_path,
+                                            self.prometheus_port)
 
     def get_logs(self, logging_dir):
         if self.centralize_log:
