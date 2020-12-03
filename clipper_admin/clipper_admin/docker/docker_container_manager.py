@@ -141,6 +141,9 @@ class DockerContainerManager(ContainerManager):
             )
             self.log_config = self.logging_system_instance.get_log_config()
 
+    def update_cuda_list(self, new_list):
+        self.cuda_config_list = new_list
+
     def start_clipper(self,
                       query_frontend_image,
                       mgmt_frontend_image,
@@ -426,7 +429,7 @@ class DockerContainerManager(ContainerManager):
         if self.nvidia_runtime:
             target_replica_nums = range(len(self.cuda_config_list))
             current_replicas = self._get_replicas(name, version)
-            current_cuda_ids = [int(str(c.name).split("-")[2]) for c in current_replicas]
+            current_cuda_ids = [int(str(c.name).split("-")[3]) for c in current_replicas]
             replica_list = [0 for i in target_replica_nums]
 
             for i in current_cuda_ids:
@@ -468,6 +471,7 @@ class DockerContainerManager(ContainerManager):
                     while num_real > num_target:
                         cur_container = current_replicas.pop()
                         cur_container.stop()
+                        num_real -= 1
                         # Metric Section
                         delete_from_metric_config(cur_container.name,
                                                 self.prom_config_path,
