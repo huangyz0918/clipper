@@ -430,7 +430,7 @@ class DockerContainerManager(ContainerManager):
             target_replica_nums = range(len(self.cuda_config_list))
             current_replicas = self._get_replicas(name, version)
             current_cuda_ids = [int(str(c.name).split("-")[3]) for c in current_replicas]
-            replica_list = [0 for i in target_replica_nums]
+            replica_list = [0 for _ in target_replica_nums]
 
             for i in current_cuda_ids:
                 replica_list[i] += 1
@@ -439,6 +439,11 @@ class DockerContainerManager(ContainerManager):
                 num_real = replica_list[cuda_id]
                 num_target = self.cuda_config_list[cuda_id]
 
+                self.logger.info(
+                    "CUDA {cuda_id}: actual replica: {num_real}, target: {num_target}".
+                    format(cuda_id=cuda_id, num_real=num_real, num_target=num_target))
+
+                # add model replicas
                 if num_real < num_target:
                     num_missing = num_target - num_real
                     self.logger.info(
@@ -458,6 +463,7 @@ class DockerContainerManager(ContainerManager):
                     for n in model_container_names:
                         self._check_container_status(n)
 
+                # remove model replicas
                 elif num_real > num_target:
                     num_extra = num_real - num_target
                     self.logger.info(
@@ -468,14 +474,17 @@ class DockerContainerManager(ContainerManager):
                             name=name,
                             version=version,
                             extra=(num_extra)))
-                    while num_real > num_target:
-                        cur_container = current_replicas.pop()
-                        cur_container.stop()
-                        num_real -= 1
-                        # Metric Section
-                        delete_from_metric_config(cur_container.name,
-                                                self.prom_config_path,
-                                                self.prometheus_port)
+                    while num_extra > 0:
+                        for i in range(len(current_replicas)):
+                            if int(str(current_replicas[i].name).split("-")[3]) == cuda_id:
+                                current_replicas[i].stop()
+                                self.logger.info("Closing container: {c}".format(c=current_replicas[i].name))
+                                # Metric Section
+                                delete_from_metric_config(current_replicas[i].name,
+                                                        self.prom_config_path,
+                                                        self.prometheus_port)
+                                del current_replicas[i]
+                                num_extra -= 1
         else: # CPU mode
             current_replicas = self._get_replicas(name, version)
             if len(current_replicas) < num_replicas:
