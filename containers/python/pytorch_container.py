@@ -53,6 +53,14 @@ class PyTorchContainer(rpc.ModelContainerBase):
         torch_weights_path = os.path.join(path, PYTORCH_WEIGHTS_RELATIVE_PATH)
         self.model = load_pytorch_model(torch_model_path, torch_weights_path)
 
+        if torch.cuda.is_available():
+            self.model.cuda()
+            print('load model to CUDA successed')
+        else: 
+            print('load model to CUDA failed')
+
+        self.model.eval()
+
     def predict_ints(self, inputs):
         preds = self.predict_func(self.model, inputs)
         return [str(p) for p in preds]

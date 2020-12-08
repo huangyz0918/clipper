@@ -478,7 +478,7 @@ class DockerContainerManager(ContainerManager):
                         for i in range(len(current_replicas)):
                             if int(str(current_replicas[i].name).split("-")[3]) == cuda_id:
                                 current_replicas[i].stop()
-                                self.logger.info("Closing container: {c}".format(c=current_replicas[i].name))
+                                self.logger.info("Stopping container: {c}".format(c=current_replicas[i].name))
                                 # Metric Section
                                 delete_from_metric_config(current_replicas[i].name,
                                                         self.prom_config_path,
